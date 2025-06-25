@@ -21,7 +21,7 @@
 <body>
 
   <div class="card" style="text-align:center;">
-    <img src="https://i.ibb.co/SXbQMjqc/IMG-20250614-WA0016.jpg" width="120" style="margin:auto;">
+    <img src="https://i.ibb.co/SXbQMjqc/IMG-20250614-WA0016.jpg" width="120">
     <h1>WEBERTECH SALES PORTAL</h1>
   </div>
 
@@ -96,10 +96,21 @@
     "dkipngeno@webergroup":{name:"Duncan Kipngeno",password:"duncan@weber",isAdmin:false}
   };
 
-  let currentUser=null,sales=[],stock=[],chart;
+  let currentUser=null, sales=[], stock=[], chart;
+
+  // Load from localStorage
+  window.onload = () => {
+    sales = JSON.parse(localStorage.getItem('salesData') || '[]').map(s => ({...s, date:new Date(s.date)}));
+    stock = JSON.parse(localStorage.getItem('stockData') || '[]');
+  };
+
+  function save() {
+    localStorage.setItem('salesData', JSON.stringify(sales));
+    localStorage.setItem('stockData', JSON.stringify(stock));
+  }
 
   function login(){
-    const u=username.value.trim().toLowerCase(),p=password.value;
+    const u=username.value.trim().toLowerCase(), p=password.value;
     if(users[u]&&users[u].password===p){
       currentUser={username:u,name:users[u].name,isAdmin:users[u].isAdmin};
       loginPage.style.display="none";
@@ -108,11 +119,14 @@
       empName.textContent=currentUser.name;
       adminPanel.style.display=currentUser.isAdmin?"block":"none";
       renderStock();renderSales();
-    }else loginError.textContent="Invalid username or password";
+    } else {
+      loginError.textContent="Invalid username or password";
+    }
   }
 
   function logout(){
     currentUser=null;
+    save();
     dashboard.style.display="none";
     loginPage.style.display="block";
     loginError.textContent="";
@@ -122,10 +136,10 @@
 
   function addStock(){
     const cat=stockCategory.value,it=stockItem.value.trim(),qt=parseInt(stockQty.value);
-    if(!it||qt<=0)return alert("Invalid stock");
+    if(!it||qt<=0) return alert("Invalid stock");
     stock.push({category:cat,item:it,quantity:qt});
     stockItem.value=stockQty.value="";
-    renderStock();
+    save(); renderStock();
   }
 
   function renderStock(){
@@ -136,46 +150,47 @@
   function addSale(){
     const cat=saleCategory.value,it=saleItem.value.trim(),qt=parseInt(saleQty.value),
           pr=parseFloat(salePrice.value),pm=salePayment.value,mp=saleMpesa.value.trim();
-    if(!it||qt<=0||pr<=0)return alert("Fill valid sale details");
+    if(!it||qt<=0||pr<=0) return alert("Fill valid sale details");
     const st=stock.find(s=>s.item.toLowerCase()===it.toLowerCase());
     if(st){
-      if(st.quantity<qt)return alert("Not enough stock");
-      st.quantity-=qt;
-      renderStock();
+      if(st.quantity<qt) return alert("Not enough stock");
+      st.quantity-=qt; renderStock();
     }
     sales.push({date:new Date(),employee:currentUser.name,username:currentUser.username,
       category:cat,item:it,qty:qt,price:pr,total:qt*pr,payment:pm,mpesa:mp});
     saleItem.value=saleQty.value=salePrice.value=saleMpesa.value="";
-    renderSales();
+    save(); renderSales();
   }
 
   function renderSales(){
-    const from=fromDate.value?new Date(fromDate.value):null,to=toDate.value?new Date(toDate.value):null,
+    const from=fromDate.value?new Date(fromDate.value):null,
+          to=toDate.value?new Date(toDate.value):null,
           term=search.value.trim().toLowerCase();
     const filtered=sales.filter(s=>{
       if(!currentUser.isAdmin && s.username!==currentUser.username) return false;
-      const d=new Date(s.date);
-      if(from&&d<from||to&&d>to)return false;
+      if(from&&s.date<from) return false;
+      if(to&&s.date>to) return false;
       return !term||Object.values(s).some(v=>String(v).toLowerCase().includes(term));
     });
     let total=0;
     salesTable.querySelector("tbody").innerHTML=filtered.map((s,i)=>{
       total+=s.total;
-      return `<tr>
-        <td>${new Date(s.date).toLocaleString()}</td><td>${s.employee}</td><td>${s.category}</td><td>${s.item}</td><td>${s.qty}</td><td>${s.price}</td><td>${s.total}</td><td>${s.payment}</td><td>${s.mpesa}</td><td><button onclick="deleteSale(${i})">Delete</button></td>
-      </tr>`;
+      return `<tr><td>${s.date.toLocaleString()}</td><td>${s.employee}</td><td>${s.category}</td><td>${s.item}</td><td>${s.qty}</td><td>${s.price}</td><td>${s.total}</td><td>${s.payment}</td><td>${s.mpesa}</td><td><button onclick="deleteSale(${i})">Delete</button></td></tr>`;
     }).join("");
     totalSales.textContent=total.toFixed(2);
     dailyWage.textContent=total>=1300?300:total>=800?250:total>=650?150:total>=350?100:0;
     renderChart(filtered);
   }
 
-  function deleteSale(i){ sales.splice(i,1); renderSales(); }
+  function deleteSale(i){
+    sales.splice(i,1);
+    save(); renderSales();
+  }
 
   function exportToExcel(){
-    const X = sales.filter(s=>currentUser.isAdmin||s.username===currentUser.username)
+    const data = (currentUser.isAdmin? sales : sales.filter(s=>s.username===currentUser.username))
       .map(s=>({Date:s.date.toLocaleString(),Employee:s.employee,Category:s.category,Item:s.item,Qty:s.qty,Price:s.price,Total:s.total,Payment:s.payment,MPESA:s.mpesa}));
-    const ws=XLSX.utils.json_to_sheet(X), wb=XLSX.utils.book_new();
+    const ws=XLSX.utils.json_to_sheet(data), wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Sales"); XLSX.writeFile(wb, "webertech_sales.xlsx");
   }
 
@@ -191,11 +206,11 @@
       }
     });
     const labels=Object.keys(daily).sort();
-    const datasets=[{ label: currentUser.isAdmin?"Total Sales":"Your Sales", data:labels.map(d=>daily[d]), borderColor:"#007BFF", fill:false }];
+    const datasets=[{label:currentUser.isAdmin?"Total Sales":"Your Sales",data:labels.map(d=>daily[d]),borderColor:"#007BFF",fill:false}];
     if(currentUser.isAdmin){
       Object.keys(empTotals).forEach((emp,i)=>{
         const color=["#e6194B","#3cb44b","#ffe119","#4363d8","#f58231"][i%5];
-        datasets.push({ label:emp, data:labels.map(d=>empTotals[emp][d]||0), borderColor:color, fill:false });
+        datasets.push({label:emp,data:labels.map(d=>empTotals[emp][d]||0),borderColor:color,fill:false});
       });
     }
     const ctx=document.getElementById("chartCanvas").getContext("2d");
@@ -204,6 +219,5 @@
 
   function print(){ window.print(); }
 </script>
-
 </body>
 </html>
